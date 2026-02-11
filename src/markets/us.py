@@ -61,4 +61,5 @@ class USMarket(Market):
             "pbr_max": 3.0,
             "dividend_yield_min": 0.02,  # 2%
             "roe_min": 0.10,
+            "rf": 0.04,  # 10-year Treasury
         }

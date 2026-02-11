@@ -68,4 +68,5 @@ class JapanMarket(Market):
             "pbr_max": 1.0,
             "dividend_yield_min": 0.025,  # 2.5%
             "roe_min": 0.08,
+            "rf": 0.005,  # 10-year JGB
         }

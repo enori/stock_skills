@@ -34,3 +34,7 @@ presets:
       max_pbr: 1.5
       min_roe: 0.15
       min_dividend_yield: 0.02
+
+  sharpe-ratio:
+    description: "シャープレシオ最適化（5条件フレームワーク）"
+    mode: "sharpe"

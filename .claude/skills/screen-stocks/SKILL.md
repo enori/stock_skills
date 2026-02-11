@@ -18,8 +18,8 @@ python3 /Users/kikuchihiroyuki/stock-skills/.claude/skills/screen-stocks/scripts
 ## 引数の解釈ルール
 
 - 第1引数: market (japan / us / asean / all) デフォルト: japan
-- 第2引数: preset (value / high-dividend / growth-value / deep-value / quality) デフォルト: value
-- 「高配当」→ high-dividend、「米国株」→ us、「割安」→ value、「成長」→ growth-value
+- 第2引数: preset (value / high-dividend / growth-value / deep-value / quality / sharpe-ratio) デフォルト: value
+- 「高配当」→ high-dividend、「米国株」→ us、「割安」→ value、「成長」→ growth-value、「シャープ」→ sharpe-ratio
 
 ## 対応市場
 
@@ -35,6 +35,7 @@ python3 /Users/kikuchihiroyuki/stock-skills/.claude/skills/screen-stocks/scripts
 - `growth-value` : 成長バリュー（成長性＋割安度）
 - `deep-value` : ディープバリュー（非常に低いPER/PBR）
 - `quality` : クオリティバリュー（高ROE＋割安）
+- `sharpe-ratio` : シャープレシオ最適化（5条件フレームワーク。低ボラ・割安・財務安定・EPS成長で選別。実行に時間がかかります）
 
 ## 出力
 

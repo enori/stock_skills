@@ -124,4 +124,5 @@ class ASEANMarket(Market):
             "pbr_max": 1.5,
             "dividend_yield_min": 0.03,  # 3%
             "roe_min": 0.08,
+            "rf": 0.03,  # Blended ASEAN govies
         }
