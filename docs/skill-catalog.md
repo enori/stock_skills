@@ -10,7 +10,7 @@
 |:---|:---|:---|
 | screen-stocks | 割安株スクリーニング (60地域, 11プリセット) | screening/*.py, yahoo_client |
 | stock-report | 個別銘柄バリュエーションレポート | indicators.py, value_trap.py, yahoo_client |
-| market-research | 深掘りリサーチ (銘柄/業界/市場/ビジネスモデル) | researcher.py, grok_client |
+| market-research | 深掘りリサーチ (銘柄/業界/市場/ビジネスモデル) | researcher.py, claude_client |
 | watchlist | ウォッチリスト管理 (add/remove/list) | (直接 JSON) |
 | stress-test | ポートフォリオストレステスト (8シナリオ) | risk/*.py, yahoo_client |
 | stock-portfolio | ポートフォリオ管理 (12サブコマンド) | portfolio/*.py, health_check.py, return_estimate.py |
@@ -75,12 +75,12 @@ python3 generate_report.py AAPL
 
 ## 3. market-research
 
-Grok API (X検索/Web検索) と yfinance を統合した深掘りリサーチ。
+Claude API (Web検索) と yfinance を統合した深掘りリサーチ。
 
 **Script**: `.claude/skills/market-research/scripts/run_research.py`
 
 **Subcommands**:
-- `stock <symbol>`: 個別銘柄の最新ニュース・Xセンチメント
+- `stock <symbol>`: 個別銘柄の最新ニュース・投資家センチメント
 - `industry <name>`: 業界動向リサーチ
 - `market <name>`: マーケット概況
 - `business <symbol>`: ビジネスモデル・事業構造分析
@@ -93,11 +93,11 @@ python3 run_research.py market 日経平均
 python3 run_research.py business 7751.T
 ```
 
-**Output**: Markdown レポート (概要/ニュース/Xトレンド/分析)
+**Output**: Markdown レポート (概要/ニュース/センチメント/分析)
 
-**Core Dependencies**: `src/core/research/researcher.py`, `src/data/grok_client.py`, `src/data/yahoo_client.py`
+**Core Dependencies**: `src/core/research/researcher.py`, `src/data/claude_client.py`, `src/data/yahoo_client.py`
 
-**Note**: XAI_API_KEY 環境変数が必要。未設定時は Grok 部分をスキップして yfinance のみで生成。
+**Note**: ANTHROPIC_API_KEY 環境変数が必要。未設定時は Claude API 部分をスキップして yfinance のみで生成。
 
 ---
 
@@ -250,13 +250,13 @@ python3 run_query.py "最近の市況は？"
 
 ```
 screen-stocks ──→ screening/{screener,indicators,filters,query_builder,alpha,technicals}
-                   yahoo_client, grok_client (trending only)
+                   yahoo_client, claude_client (trending only)
 
 stock-report ───→ screening/indicators, value_trap
                    yahoo_client
 
 market-research → research/researcher
-                   grok_client, yahoo_client
+                   claude_client, yahoo_client
 
 watchlist ──────→ (none - direct JSON)
 

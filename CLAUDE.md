@@ -27,7 +27,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 # スクリーニング実行（EquityQuery方式 - デフォルト）
 python3 .claude/skills/screen-stocks/scripts/run_screen.py --region japan --preset value --top 10
 
-# Xトレンド銘柄スクリーニング（Grok API、XAI_API_KEY 必須）
+# Webトレンド銘柄スクリーニング（Claude API、ANTHROPIC_API_KEY 必須）
 python3 .claude/skills/screen-stocks/scripts/run_screen.py --region japan --preset trending --top 10
 python3 .claude/skills/screen-stocks/scripts/run_screen.py --region us --preset trending --theme "AI" --top 10
 
@@ -88,7 +88,7 @@ Skills (.claude/skills/*/SKILL.md → scripts/*.py)
   │
   ├─ screen-stocks/run_screen.py   … --region --preset --sector --with-pullback
   ├─ stock-report/generate_report.py
-  ├─ market-research/run_research.py … stock/industry/market/business (Grok API深掘り)
+  ├─ market-research/run_research.py … stock/industry/market/business (Claude API深掘り)
   ├─ watchlist/manage_watchlist.py
   ├─ stress-test/run_stress_test.py
   ├─ investment-note/manage_note.py  … save/list/delete (投資メモCRUD)
@@ -133,7 +133,7 @@ Skills (.claude/skills/*/SKILL.md → scripts/*.py)
   │    recommender.py ─ ルールベース推奨アクション                  │
   │                                                           │
   │  research/ ─ 深掘りリサーチ                                  │
-  │    researcher.py ─ yfinance+Grok API統合リサーチ              │
+  │    researcher.py ─ yfinance+Claude API統合リサーチ              │
   └─────────────────────────────────────────────────────────┘
       │                    │                    │
   Markets            Data                  Output
@@ -145,9 +145,9 @@ Skills (.claude/skills/*/SKILL.md → scripts/*.py)
                       異常値ガード)        stress_formatter.py
                                            portfolio_formatter.py
                                            research_formatter.py
-                     grok_client.py
-                     (Grok API X/Web Search,
-                      XAI_API_KEY 環境変数,
+                     claude_client.py
+                     (Claude API Web Search,
+                      ANTHROPIC_API_KEY 環境変数,
                       未設定時スキップ,
                       銘柄/業界/市場リサーチ)
                      history_store.py

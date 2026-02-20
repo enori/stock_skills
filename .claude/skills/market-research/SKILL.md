@@ -1,6 +1,6 @@
 ---
 name: market-research
-description: "銘柄・業界・マーケット・ビジネスモデルの深掘りリサーチ。Grok API (X/Web検索) と yfinance を統合して多角的な分析レポートを生成する。"
+description: "銘柄・業界・マーケット・ビジネスモデルの深掘りリサーチ。Claude API (Web検索) と yfinance を統合して多角的な分析レポートを生成する。"
 argument-hint: "[stock|industry|market|business] [対象]  例: stock 7203.T, industry 半導体, market 日経平均, business 7751.T"
 allowed-tools: Bash(python3 *)
 ---
@@ -46,14 +46,14 @@ python3 /Users/kikuchihiroyuki/stock-skills/.claude/skills/market-research/scrip
 ### stock（銘柄リサーチ）
 - 基本情報 + バリュエーション（yfinance）
 - 最新ニュース（yfinance）
-- Xセンチメント（Grok API）
-- 深掘り分析: ニュース・業績材料・アナリスト見解・競合比較（Grok API）
+- 投資家センチメント（Claude API）
+- 深掘り分析: ニュース・業績材料・アナリスト見解・競合比較（Claude API）
 
 ### industry（業界リサーチ）
-- トレンド・主要プレイヤー・成長ドライバー・リスク・規制動向（Grok API）
+- トレンド・主要プレイヤー・成長ドライバー・リスク・規制動向（Claude API）
 
 ### market（マーケット概況）
-- 値動き・マクロ要因・センチメント・注目イベント・セクターローテーション（Grok API）
+- 値動き・マクロ要因・センチメント・注目イベント・セクターローテーション（Claude API）
 
 ### business（ビジネスモデル分析）
 - 事業概要（何で稼いでいるか）
@@ -64,17 +64,17 @@ python3 /Users/kikuchihiroyuki/stock-skills/.claude/skills/market-research/scrip
 - 成長戦略（中期経営計画・M&A・新規事業）
 - ビジネスリスク（構造的リスク・依存度）
 
-## Grok API について
-- XAI_API_KEY 環境変数が設定されている場合のみ Grok API を利用
+## Claude API について
+- ANTHROPIC_API_KEY 環境変数が設定されている場合のみ Claude API を利用
 - 未設定時は yfinance データのみでレポート生成（stock の場合）
-- industry / market / business は Grok API 必須のため、未設定時はその旨を表示
+- industry / market / business は Claude API 必須のため、未設定時はその旨を表示
 
 ## 出力の補足
 
 スクリプトの出力をそのまま表示した後、Claudeが以下を補足してください:
 
 ### stock の場合
-- ファンダメンタルズデータと Grok リサーチの整合性を確認
+- ファンダメンタルズデータと Claude リサーチの整合性を確認
 - バリュースコアと市場センチメントの乖離があれば指摘
 - 投資判断に影響する追加コンテキストがあれば補足
 

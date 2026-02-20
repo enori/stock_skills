@@ -131,7 +131,7 @@ def format_stock_research(data: dict) -> str:
         or x_sentiment.get("raw_response")
     )
 
-    lines.append("## X (Twitter) センチメント")
+    lines.append("## 投資家センチメント")
 
     if _has_sentiment:
         score = x_sentiment.get("sentiment_score", 0.0)
@@ -154,11 +154,11 @@ def format_stock_research(data: dict) -> str:
             lines.append("")
     else:
         lines.append(
-            "*Grok API (XAI_API_KEY) が未設定のため、Xセンチメント分析は利用できません。*"
+            "*Claude API (ANTHROPIC_API_KEY) が未設定のため、センチメント分析は利用できません。*"
         )
         lines.append("")
 
-    # --- Deep research (Grok API) ---
+    # --- Deep research (Claude API) ---
     grok = data.get("grok_research", {})
     _has_grok = (
         grok.get("recent_news")
@@ -170,7 +170,7 @@ def format_stock_research(data: dict) -> str:
     )
 
     if _has_grok:
-        lines.append("## 深掘りリサーチ (Grok API)")
+        lines.append("## 深掘りリサーチ (Claude API)")
         lines.append("")
 
         # Recent news
@@ -216,10 +216,10 @@ def format_stock_research(data: dict) -> str:
     else:
         lines.append("## 深掘りリサーチ")
         lines.append(
-            "*Grok API (XAI_API_KEY) が未設定のため、Web/X検索リサーチは利用できません。*"
+            "*Claude API (ANTHROPIC_API_KEY) が未設定のため、Web検索リサーチは利用できません。*"
         )
         lines.append(
-            "*XAI_API_KEY 環境変数を設定すると、X投稿・Web検索による深掘り分析が有効になります。*"
+            "*ANTHROPIC_API_KEY 環境変数を設定すると、Web検索による深掘り分析が有効になります。*"
         )
         lines.append("")
 
@@ -253,7 +253,7 @@ def format_industry_research(data: dict) -> str:
         lines.append(f"# {theme} - 業界リサーチ")
         lines.append("")
         lines.append(
-            "*業界リサーチにはGrok APIが必要です。XAI_API_KEY 環境変数を設定してください。*"
+            "*業界リサーチにはClaude APIが必要です。ANTHROPIC_API_KEY 環境変数を設定してください。*"
         )
         lines.append("")
         return "\n".join(lines)
@@ -406,9 +406,9 @@ def format_market_research(data: dict) -> str:
             lines.append(f"**Fear & Greed: {label}** (VIX: {_fmt_float(vix_price, 2)})")
             lines.append("")
 
-    # === Layer 2: Grok qualitative ===
+    # === Layer 2: Claude qualitative ===
     if data.get("api_unavailable"):
-        lines.append("*Grok API (XAI_API_KEY) 未設定のため定性分析はスキップ*")
+        lines.append("*Claude API (ANTHROPIC_API_KEY) 未設定のため定性分析はスキップ*")
         lines.append("")
         return "\n".join(lines)
 
@@ -493,7 +493,7 @@ def format_business_research(data: dict) -> str:
         lines.append(f"# {title} - ビジネスモデル分析")
         lines.append("")
         lines.append(
-            "*ビジネスモデル分析にはGrok APIが必要です。XAI_API_KEY 環境変数を設定してください。*"
+            "*ビジネスモデル分析にはClaude APIが必要です。ANTHROPIC_API_KEY 環境変数を設定してください。*"
         )
         lines.append("")
         return "\n".join(lines)

@@ -13,8 +13,8 @@ Python 3.10+ が必要。依存: yfinance, pyyaml, numpy, pytest
 ### 環境変数
 
 ```bash
-# Grok API（Xセンチメント分析、任意）
-export XAI_API_KEY=xai-xxxxxxxxxxxxx
+# Claude API（Web検索による深掘りリサーチ、任意）
+export ANTHROPIC_API_KEY=sk-ant-xxxxxxxxxxxxx
 
 # Neo4j 書き込み深度（off/summary/full、デフォルト: full）
 export NEO4J_MODE=full
@@ -85,7 +85,7 @@ EquityQuery で日本株・米国株・ASEAN株等から銘柄を検索。11の�
 
 ### `/market-research` — 深掘りリサーチ
 
-銘柄・業界・マーケット・ビジネスモデルの深掘り分析。Grok API で最新ニュース・Xセンチメント・業界動向を取得。
+銘柄・業界・マーケット・ビジネスモデルの深掘り分析。Claude API で最新ニュース・投資家センチメント・業界動向を取得。
 
 ```bash
 /market-research stock 7203.T    # 銘柄リサーチ
@@ -141,13 +141,13 @@ Core (src/core/)
   screening/ ─ screener, indicators, filters, query_builder, alpha, technicals
   portfolio/ ─ portfolio_manager, portfolio_simulation, concentration, rebalancer, simulator, backtest
   risk/      ─ correlation, shock_sensitivity, scenario_analysis, scenario_definitions, recommender
-  research/  ─ researcher (yfinance + Grok API統合)
+  research/  ─ researcher (yfinance + Claude API統合)
   [root]     ─ common, models, ticker_utils, health_check, return_estimate, value_trap
   │
   ├─ Markets (src/markets/) ─ japan/us/asean
   ├─ Data (src/data/)
   │    yahoo_client.py ─ 24h JSONキャッシュ
-  │    grok_client.py ─ Grok API (Xセンチメント分析)
+  │    claude_client.py ─ Claude API (Web検索による深掘りリサーチ)
   │    graph_store.py ─ Neo4j ナレッジグラフ (dual-write)
   │    history_store.py ─ 実行履歴の自動蓄積
   ├─ Output (src/output/) ─ Markdown フォーマッタ

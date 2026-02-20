@@ -1,31 +1,31 @@
 """Deep research orchestration for stocks, industries, and markets (KIK-367).
 
-Integrates yfinance quantitative data with Grok API qualitative data
-(X posts, web search) to produce multi-faceted research reports.
+Integrates yfinance quantitative data with Claude API qualitative data
+(web search) to produce multi-faceted research reports.
 """
 
 import sys
 
 from src.core.screening.indicators import calculate_value_score
 
-# Grok API: graceful degradation when module is unavailable
+# Claude API: graceful degradation when module is unavailable
 try:
-    from src.data import grok_client
+    from src.data import claude_client
 
-    HAS_GROK = True
+    HAS_CLAUDE = True
 except ImportError:
-    HAS_GROK = False
+    HAS_CLAUDE = False
 
-_grok_warned = [False]
-
-
-def _grok_available() -> bool:
-    """Return True if grok_client is importable and API key is set."""
-    return HAS_GROK and grok_client.is_available()
+_claude_warned = [False]
 
 
-def _safe_grok_call(func, *args, **kwargs):
-    """Call a grok_client function with error handling.
+def _claude_available() -> bool:
+    """Return True if claude_client is importable and API key is set."""
+    return HAS_CLAUDE and claude_client.is_available()
+
+
+def _safe_claude_call(func, *args, **kwargs):
+    """Call a claude_client function with error handling.
 
     Returns the function result on success, or None on any exception.
     Prints a warning to stderr on the first failure (subsequent suppressed).
@@ -33,12 +33,12 @@ def _safe_grok_call(func, *args, **kwargs):
     try:
         return func(*args, **kwargs)
     except Exception as e:
-        if not _grok_warned[0]:
+        if not _claude_warned[0]:
             print(
-                f"[researcher] Grok API error (subsequent errors suppressed): {e}",
+                f"[researcher] Claude API error (subsequent errors suppressed): {e}",
                 file=sys.stderr,
             )
-            _grok_warned[0] = True
+            _claude_warned[0] = True
         return None
 
 
@@ -122,7 +122,7 @@ def _empty_business() -> dict:
 
 
 def research_stock(symbol: str, yahoo_client_module) -> dict:
-    """Run comprehensive stock research combining yfinance and Grok API.
+    """Run comprehensive stock research combining yfinance and Claude API.
 
     Parameters
     ----------
@@ -135,7 +135,7 @@ def research_stock(symbol: str, yahoo_client_module) -> dict:
     -------
     dict
         Integrated research data with fundamentals, value score,
-        Grok deep research, X sentiment, and news.
+        deep research, web sentiment, and news.
     """
     # 1. Fetch base data via yahoo_client
     info = yahoo_client_module.get_stock_info(symbol)
@@ -148,19 +148,19 @@ def research_stock(symbol: str, yahoo_client_module) -> dict:
     # 2. Calculate value score
     value_score = calculate_value_score(info)
 
-    # 3. Grok API: deep research + X sentiment
+    # 3. Claude API: deep research + web sentiment
     grok_research = _empty_stock_deep()
     x_sentiment = _empty_sentiment()
 
-    if _grok_available():
-        deep = _safe_grok_call(
-            grok_client.search_stock_deep, symbol, company_name
+    if _claude_available():
+        deep = _safe_claude_call(
+            claude_client.search_stock_deep, symbol, company_name
         )
         if deep is not None:
             grok_research = deep
 
-        sent = _safe_grok_call(
-            grok_client.search_x_sentiment, symbol, company_name
+        sent = _safe_claude_call(
+            claude_client.search_x_sentiment, symbol, company_name
         )
         if sent is not None:
             x_sentiment = sent
@@ -186,7 +186,7 @@ def research_stock(symbol: str, yahoo_client_module) -> dict:
 
 
 def research_industry(theme: str) -> dict:
-    """Run industry/theme research via Grok API.
+    """Run industry/theme research via Claude API.
 
     Parameters
     ----------
@@ -196,10 +196,10 @@ def research_industry(theme: str) -> dict:
     Returns
     -------
     dict
-        Industry research data. When Grok API is unavailable,
+        Industry research data. When Claude API is unavailable,
         returns empty result with ``api_unavailable=True``.
     """
-    if not _grok_available():
+    if not _claude_available():
         return {
             "theme": theme,
             "type": "industry",
@@ -207,7 +207,7 @@ def research_industry(theme: str) -> dict:
             "api_unavailable": True,
         }
 
-    result = _safe_grok_call(grok_client.search_industry, theme)
+    result = _safe_claude_call(claude_client.search_industry, theme)
     if result is None:
         result = _empty_industry()
 
@@ -220,7 +220,7 @@ def research_industry(theme: str) -> dict:
 
 
 def research_market(market: str, yahoo_client_module=None) -> dict:
-    """Run market overview research via yfinance quantitative + Grok qualitative.
+    """Run market overview research via yfinance quantitative + Claude qualitative.
 
     Parameters
     ----------
@@ -234,7 +234,7 @@ def research_market(market: str, yahoo_client_module=None) -> dict:
     -------
     dict
         Market research data with ``macro_indicators`` (Layer 1, always)
-        and ``grok_research`` (Layer 2, when Grok API is available).
+        and ``grok_research`` (Layer 2, when Claude API is available).
     """
     # Layer 1: yfinance quantitative (always available)
     macro_indicators: list[dict] = []
@@ -244,11 +244,11 @@ def research_market(market: str, yahoo_client_module=None) -> dict:
         except Exception:
             pass
 
-    # Layer 2: Grok qualitative (when API key is set)
+    # Layer 2: Claude qualitative (when API key is set)
     grok_research = _empty_market()
     api_unavailable = True
-    if _grok_available():
-        result = _safe_grok_call(grok_client.search_market, market)
+    if _claude_available():
+        result = _safe_claude_call(claude_client.search_market, market)
         if result is not None:
             grok_research = result
         api_unavailable = False
@@ -263,7 +263,7 @@ def research_market(market: str, yahoo_client_module=None) -> dict:
 
 
 def research_business(symbol: str, yahoo_client_module) -> dict:
-    """Run business model research combining yfinance and Grok API.
+    """Run business model research combining yfinance and Claude API.
 
     Parameters
     ----------
@@ -275,7 +275,7 @@ def research_business(symbol: str, yahoo_client_module) -> dict:
     Returns
     -------
     dict
-        Business model research data. When Grok API is unavailable,
+        Business model research data. When Claude API is unavailable,
         returns empty result with ``api_unavailable=True``.
     """
     # Fetch company name from yfinance for prompt enrichment
@@ -284,7 +284,7 @@ def research_business(symbol: str, yahoo_client_module) -> dict:
         info = {}
     company_name = info.get("name") or ""
 
-    if not _grok_available():
+    if not _claude_available():
         return {
             "symbol": symbol,
             "name": company_name,
@@ -293,7 +293,7 @@ def research_business(symbol: str, yahoo_client_module) -> dict:
             "api_unavailable": True,
         }
 
-    result = _safe_grok_call(grok_client.search_business, symbol, company_name)
+    result = _safe_claude_call(claude_client.search_business, symbol, company_name)
     if result is None:
         result = _empty_business()
 

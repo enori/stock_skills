@@ -761,10 +761,10 @@ class GrowthScreener:
 
 
 class TrendingScreener:
-    """Screen stocks trending on X (Twitter) with fundamental enrichment.
+    """Screen stocks trending on the web with fundamental enrichment.
 
     Pipeline:
-      Step 1: Grok API x_search to discover trending tickers
+      Step 1: Claude API web_search to discover trending tickers
       Step 2: yahoo_client.get_stock_info() for fundamentals
       Step 3: calculate_value_score() + classify
       Step 4: Sort by classification then score
@@ -781,9 +781,9 @@ class TrendingScreener:
     FAIR_VALUE_THRESHOLD = 30
     CLASSIFICATION_NO_DATA = "話題×データ不足"
 
-    def __init__(self, yahoo_client, grok_client_module):
+    def __init__(self, yahoo_client, search_client_module):
         self.yahoo_client = yahoo_client
-        self.grok_client = grok_client_module
+        self.search_client = search_client_module
 
     @staticmethod
     def classify(value_score: float) -> str:
@@ -806,7 +806,7 @@ class TrendingScreener:
         tuple[list[dict], str]
             (results, market_context)
         """
-        trending = self.grok_client.search_trending_stocks(
+        trending = self.search_client.search_trending_stocks(
             region=region, theme=theme,
         )
 

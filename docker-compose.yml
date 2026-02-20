@@ -7,7 +7,7 @@ services:
     volumes:
       - neo4j_data:/data
     environment:
-      NEO4J_AUTH: neo4j/password
+      NEO4J_AUTH: ${NEO4J_AUTH:-neo4j/password}
 
   # KIK-420: Text Embeddings Inference for vector search
   embedding:

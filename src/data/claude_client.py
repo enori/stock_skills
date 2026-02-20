@@ -1,29 +1,36 @@
-"""Grok API (xAI) wrapper for X Search and sentiment analysis (KIK-359).
+"""Claude API (Anthropic) wrapper for web search and sentiment analysis.
 
-Uses the xAI Responses API to search X (Twitter) posts and analyze
-market sentiment for individual stocks, industries, and markets.
+Uses the Anthropic Messages API with the web_search server-side tool to search
+the web and analyze market sentiment for stocks, industries, and markets.
 
-API key is read from the XAI_API_KEY environment variable.
-When the key is not set, is_available() returns False and
-all search functions return empty results (graceful degradation).
+API key is read from the ANTHROPIC_API_KEY environment variable (auto-detected
+by the anthropic SDK). When the key is not set or the anthropic package is not
+installed, is_available() returns False and all search functions return empty
+results (graceful degradation).
 """
 
 import json
 import os
+import re
 import sys
 from pathlib import Path
 from typing import Optional
 
-import requests
 from dotenv import load_dotenv
 
 # Load .env from project root
 load_dotenv(Path(__file__).resolve().parents[2] / ".env")
 
 
-_API_URL = "https://api.x.ai/v1/responses"
-_DEFAULT_MODEL = "grok-4-1-fast-non-reasoning"
+_DEFAULT_MODEL = "claude-sonnet-4-20250514"
 _error_warned = [False]
+
+# Try to import anthropic SDK
+try:
+    import anthropic
+    _HAS_ANTHROPIC = True
+except ImportError:
+    _HAS_ANTHROPIC = False
 
 # ---------------------------------------------------------------------------
 # Empty result constants
@@ -80,17 +87,17 @@ EMPTY_BUSINESS = {
 # ---------------------------------------------------------------------------
 
 def is_available() -> bool:
-    """Check if Grok API is available (XAI_API_KEY is set)."""
-    return bool(os.environ.get("XAI_API_KEY"))
+    """Check if Claude API is available (anthropic package installed and ANTHROPIC_API_KEY is set)."""
+    return _HAS_ANTHROPIC and bool(os.environ.get("ANTHROPIC_API_KEY"))
 
 
 # ---------------------------------------------------------------------------
 # Private helpers
 # ---------------------------------------------------------------------------
 
-def _get_api_key() -> Optional[str]:
-    """Return the API key or None."""
-    return os.environ.get("XAI_API_KEY")
+def _get_model() -> str:
+    """Return the model to use for research queries."""
+    return os.environ.get("CLAUDE_RESEARCH_MODEL", _DEFAULT_MODEL)
 
 
 def _is_japanese_stock(symbol: str) -> bool:
@@ -103,8 +110,8 @@ def _contains_japanese(text: str) -> bool:
     return any(0x3000 <= ord(c) <= 0x9FFF for c in text)
 
 
-def _call_grok_api(prompt: str, timeout: int = 30) -> str:
-    """Common request helper for the Grok API.
+def _call_claude_api(prompt: str, timeout: int = 60) -> str:
+    """Common request helper for the Claude API.
 
     Parameters
     ----------
@@ -118,66 +125,57 @@ def _call_grok_api(prompt: str, timeout: int = 30) -> str:
     str
         Text portion of the API response.  Empty string on error.
     """
-    api_key = _get_api_key()
-    if not api_key:
+    if not is_available():
         return ""
 
     try:
-        headers = {
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json",
-        }
+        client = anthropic.Anthropic(timeout=timeout)
 
-        payload = {
-            "model": _DEFAULT_MODEL,
-            "tools": [{"type": "x_search"}, {"type": "web_search"}],
-            "input": prompt,
-        }
+        messages = [{"role": "user", "content": prompt}]
 
-        response = requests.post(
-            _API_URL,
-            headers=headers,
-            json=payload,
-            timeout=timeout,
+        response = client.messages.create(
+            model=_get_model(),
+            max_tokens=4096,
+            messages=messages,
+            tools=[
+                {
+                    "type": "web_search_20250305",
+                    "name": "web_search",
+                    "max_uses": 5,
+                }
+            ],
         )
 
-        if response.status_code != 200:
-            if not _error_warned[0]:
-                print(
-                    f"[grok_client] API error: "
-                    f"status={response.status_code} (subsequent errors suppressed)",
-                    file=sys.stderr,
-                )
-                _error_warned[0] = True
-            return ""
-
-        data = response.json()
+        # Handle pause_turn: add response to messages and continue
+        if response.stop_reason == "pause_turn":
+            messages.append({"role": "assistant", "content": response.content})
+            response = client.messages.create(
+                model=_get_model(),
+                max_tokens=4096,
+                messages=messages,
+                tools=[
+                    {
+                        "type": "web_search_20250305",
+                        "name": "web_search",
+                        "max_uses": 5,
+                    }
+                ],
+            )
 
         # Extract text content from the response
         raw_text = ""
-        output_items = data.get("output", [])
-        for item in output_items:
-            if item.get("type") == "message":
-                for content in item.get("content", []):
-                    if content.get("type") == "output_text":
-                        raw_text = content.get("text", "")
-                        break
+        for block in response.content:
+            if block.type == "text":
+                raw_text += block.text
 
         return raw_text
 
-    except requests.exceptions.Timeout:
-        if not _error_warned[0]:
-            print("[grok_client] Timeout (subsequent errors suppressed)", file=sys.stderr)
-            _error_warned[0] = True
-        return ""
-    except requests.exceptions.RequestException as e:
-        if not _error_warned[0]:
-            print(f"[grok_client] Request error: {e} (subsequent errors suppressed)", file=sys.stderr)
-            _error_warned[0] = True
-        return ""
     except Exception as e:
         if not _error_warned[0]:
-            print(f"[grok_client] Unexpected error: {e} (subsequent errors suppressed)", file=sys.stderr)
+            print(
+                f"[claude_client] API error: {e} (subsequent errors suppressed)",
+                file=sys.stderr,
+            )
             _error_warned[0] = True
         return ""
 
@@ -185,9 +183,19 @@ def _call_grok_api(prompt: str, timeout: int = 30) -> str:
 def _parse_json_response(raw_text: str) -> dict:
     """Extract a JSON object from *raw_text*.
 
-    Finds the first ``{`` and last ``}`` and attempts ``json.loads``.
+    Handles JSON embedded in markdown code blocks (```json ... ```)
+    as well as raw JSON with surrounding text.
     Returns an empty dict on failure.
     """
+    # First try: extract from markdown code block
+    code_block_match = re.search(r"```(?:json)?\s*\n?(.*?)\n?\s*```", raw_text, re.DOTALL)
+    if code_block_match:
+        try:
+            return json.loads(code_block_match.group(1).strip())
+        except (json.JSONDecodeError, ValueError):
+            pass
+
+    # Fallback: find first { and last }
     try:
         json_start = raw_text.find("{")
         json_end = raw_text.rfind("}") + 1
@@ -206,12 +214,12 @@ def _build_sentiment_prompt(symbol: str, company_name: str = "") -> str:
     """Build the prompt for sentiment analysis."""
     name_part = f" ({company_name})" if company_name else ""
     return (
-        f"Search X for recent posts about {symbol}{name_part} stock. "
-        f"Analyze the sentiment of the posts and provide:\n"
+        f"Search the web for recent investor discussions and sentiment about {symbol}{name_part} stock. "
+        f"Analyze the sentiment and provide:\n"
         f"1. A list of positive factors (bullish signals) mentioned\n"
         f"2. A list of negative factors (bearish signals) mentioned\n"
         f"3. An overall sentiment score from -1.0 (very bearish) to 1.0 (very bullish)\n\n"
-        f"Respond in JSON format:\n"
+        f"Respond ONLY in JSON format (no other text):\n"
         f'{{"positive": ["factor1", "factor2"], '
         f'"negative": ["factor1", "factor2"], '
         f'"sentiment_score": 0.0}}'
@@ -223,13 +231,13 @@ def _build_stock_deep_prompt(symbol: str, company_name: str = "") -> str:
     name_part = f" ({company_name})" if company_name else ""
     if _is_japanese_stock(symbol):
         return (
-            f"{symbol}{name_part} について、X（Twitter）とWebの最新情報をもとに以下を調査してください。\n\n"
+            f"{symbol}{name_part} について、Webの最新情報をもとに以下を調査してください。\n\n"
             f"1. 最近の重要ニュース（直近1-2週間）\n"
             f"2. 業績に影響する材料（ポジティブ/ネガティブ）\n"
             f"3. 機関投資家・アナリストの見方\n"
-            f"4. X上の投資家センチメント\n"
+            f"4. 投資家コミュニティのセンチメント\n"
             f"5. 競合他社との比較での注目点\n\n"
-            f"JSON形式で回答:\n"
+            f"JSONのみで回答（他のテキストは不要）:\n"
             f'{{\n'
             f'  "recent_news": ["ニュース1", "ニュース2"],\n'
             f'  "catalysts": {{\n'
@@ -246,13 +254,13 @@ def _build_stock_deep_prompt(symbol: str, company_name: str = "") -> str:
             f'}}'
         )
     return (
-        f"Research {symbol}{name_part} using X (Twitter) and web sources. Provide:\n\n"
+        f"Research {symbol}{name_part} using web sources. Provide:\n\n"
         f"1. Key recent news (last 1-2 weeks)\n"
         f"2. Catalysts affecting earnings (positive/negative)\n"
         f"3. Institutional/analyst perspectives\n"
-        f"4. X investor sentiment\n"
+        f"4. Investor community sentiment\n"
         f"5. Notable competitive dynamics\n\n"
-        f"Respond in JSON:\n"
+        f"Respond ONLY in JSON (no other text):\n"
         f'{{\n'
         f'  "recent_news": ["news1", "news2"],\n'
         f'  "catalysts": {{\n'
@@ -274,13 +282,13 @@ def _build_industry_prompt(industry_or_theme: str) -> str:
     """Build the prompt for industry research."""
     if _contains_japanese(industry_or_theme):
         return (
-            f"「{industry_or_theme}」業界・テーマについて、X（Twitter）とWebの最新情報をもとに以下を調査してください。\n\n"
+            f"「{industry_or_theme}」業界・テーマについて、Webの最新情報をもとに以下を調査してください。\n\n"
             f"1. 業界の現状と最近のトレンド\n"
             f"2. 主要プレイヤーと注目企業\n"
             f"3. 成長ドライバーとリスク要因\n"
             f"4. 規制・政策の動向\n"
             f"5. 投資家の注目ポイント\n\n"
-            f"JSON形式で回答:\n"
+            f"JSONのみで回答（他のテキストは不要）:\n"
             f'{{\n'
             f'  "trends": ["トレンド1", "トレンド2"],\n'
             f'  "key_players": [\n'
@@ -293,13 +301,13 @@ def _build_industry_prompt(industry_or_theme: str) -> str:
             f'}}'
         )
     return (
-        f"Research the \"{industry_or_theme}\" industry/theme using X (Twitter) and web sources. Provide:\n\n"
+        f"Research the \"{industry_or_theme}\" industry/theme using web sources. Provide:\n\n"
         f"1. Current trends\n"
         f"2. Key players and notable companies\n"
         f"3. Growth drivers and risk factors\n"
         f"4. Regulatory/policy developments\n"
         f"5. Investor focus points\n\n"
-        f"Respond in JSON:\n"
+        f"Respond ONLY in JSON (no other text):\n"
         f'{{\n'
         f'  "trends": ["trend1", "trend2"],\n'
         f'  "key_players": [\n'
@@ -314,7 +322,7 @@ def _build_industry_prompt(industry_or_theme: str) -> str:
 
 
 def _build_trending_prompt(region: str = "japan", theme: Optional[str] = None) -> str:
-    """Build the prompt for discovering trending stocks on X."""
+    """Build the prompt for discovering trending stocks."""
     _REGION_DESC = {
         "japan": ("日本株", "Tokyo Stock Exchange", ".T"),
         "jp": ("日本株", "Tokyo Stock Exchange", ".T"),
@@ -341,34 +349,34 @@ def _build_trending_prompt(region: str = "japan", theme: Optional[str] = None) -
 
     if region in ("japan", "jp"):
         return (
-            f"X（Twitter）上で今、投資家の間で話題になっている{label}を検索してください。"
+            f"Web上で今、投資家の間で話題になっている{label}を検索してください。"
             f"{theme_part}\n\n"
             f"決算サプライズ、新製品発表、規制変更、業界トレンドなどで注目されている"
             f"銘柄を10〜20件見つけてください。\n"
             f"各銘柄について、ティッカーシンボルと話題の理由を提供してください。\n\n"
             f"重要: {suffix_inst}\n"
             f"Yahoo Finance で検索可能な実在のティッカーのみを返してください。\n\n"
-            f"JSON形式で回答:\n"
+            f"JSONのみで回答（他のテキストは不要）:\n"
             f'{{\n'
             f'  "stocks": [\n'
             f'    {{"ticker": "シンボル", "name": "企業名", "reason": "話題の理由"}}\n'
             f'  ],\n'
-            f'  "market_context": "X上の市場センチメント概要"\n'
+            f'  "market_context": "市場センチメント概要"\n'
             f'}}'
         )
     return (
-        f"Search X (Twitter) for stocks that are currently trending or heavily discussed "
+        f"Search the web for stocks that are currently trending or heavily discussed "
         f"among investors in the {label} ({exchange}) market.{theme_part}\n\n"
-        f"Find 10-20 stocks getting significant attention on X right now. "
+        f"Find 10-20 stocks getting significant attention right now. "
         f"For each stock, provide the ticker symbol and a brief reason WHY it is trending.\n\n"
         f"IMPORTANT: {suffix_inst}\n"
         f"Return ONLY valid, real ticker symbols that can be looked up on Yahoo Finance.\n\n"
-        f"Respond in JSON format:\n"
+        f"Respond ONLY in JSON format (no other text):\n"
         f'{{\n'
         f'  "stocks": [\n'
         f'    {{"ticker": "SYMBOL", "name": "Company Name", "reason": "Why it is trending"}}\n'
         f'  ],\n'
-        f'  "market_context": "Brief summary of the current market mood on X"\n'
+        f'  "market_context": "Brief summary of the current market mood"\n'
         f'}}'
     )
 
@@ -376,13 +384,13 @@ def _build_trending_prompt(region: str = "japan", theme: Optional[str] = None) -
 def _build_market_prompt(market_or_index: str) -> str:
     """Build the prompt for market research."""
     return (
-        f"「{market_or_index}」の最新マーケット概況を、X（Twitter）とWebの情報をもとに調査してください。\n\n"
+        f"「{market_or_index}」の最新マーケット概況を、Webの情報をもとに調査してください。\n\n"
         f"1. 直近の値動きと要因\n"
         f"2. マクロ経済の影響（金利・為替・商品）\n"
         f"3. センチメント（強気/弱気のバランス）\n"
         f"4. 注目イベント・経済指標の予定\n"
         f"5. セクターローテーションの兆候\n\n"
-        f"JSON形式で回答:\n"
+        f"JSONのみで回答（他のテキストは不要）:\n"
         f'{{\n'
         f'  "price_action": "直近の値動きサマリー",\n'
         f'  "macro_factors": ["要因1", "要因2"],\n'
@@ -401,7 +409,7 @@ def _build_business_prompt(symbol: str, company_name: str = "") -> str:
     name_part = f" ({company_name})" if company_name else ""
     if _is_japanese_stock(symbol) or _contains_japanese(company_name):
         return (
-            f"{symbol}{name_part} のビジネスモデルについて、WebとX（Twitter）の情報をもとに詳しく分析してください。\n\n"
+            f"{symbol}{name_part} のビジネスモデルについて、Webの情報をもとに詳しく分析してください。\n\n"
             f"1. 事業概要（何で稼いでいるか）\n"
             f"2. 事業セグメント構成（セグメント名、売上比率、概要）\n"
             f"3. 収益モデル（ストック型/フロー型/サブスク/ライセンス等）\n"
@@ -409,7 +417,7 @@ def _build_business_prompt(symbol: str, company_name: str = "") -> str:
             f"5. 重要KPI（投資家が注目すべき指標）\n"
             f"6. 成長戦略（中期経営計画、M&A、新規事業等）\n"
             f"7. ビジネスリスク（構造的リスク、依存度等）\n\n"
-            f"JSON形式で回答:\n"
+            f"JSONのみで回答（他のテキストは不要）:\n"
             f'{{\n'
             f'  "overview": "事業概要テキスト",\n'
             f'  "segments": [\n'
@@ -423,7 +431,7 @@ def _build_business_prompt(symbol: str, company_name: str = "") -> str:
             f'}}'
         )
     return (
-        f"Analyze the business model of {symbol}{name_part} using web and X (Twitter) sources. Provide:\n\n"
+        f"Analyze the business model of {symbol}{name_part} using web sources. Provide:\n\n"
         f"1. Business overview (how the company makes money)\n"
         f"2. Business segments (name, revenue share, description)\n"
         f"3. Revenue model (recurring/transactional/subscription/licensing etc.)\n"
@@ -431,7 +439,7 @@ def _build_business_prompt(symbol: str, company_name: str = "") -> str:
         f"5. Key metrics (KPIs investors should watch)\n"
         f"6. Growth strategy (M&A, new markets, product roadmap)\n"
         f"7. Business risks (structural risks, dependencies)\n\n"
-        f"Respond in JSON:\n"
+        f"Respond ONLY in JSON (no other text):\n"
         f'{{\n'
         f'  "overview": "business overview text",\n'
         f'  "segments": [\n'
@@ -453,9 +461,9 @@ def _build_business_prompt(symbol: str, company_name: str = "") -> str:
 def search_x_sentiment(
     symbol: str,
     company_name: str = "",
-    timeout: int = 30,
+    timeout: int = 60,
 ) -> dict:
-    """Search X for stock sentiment using Grok API.
+    """Search the web for stock sentiment using Claude API.
 
     Parameters
     ----------
@@ -481,7 +489,7 @@ def search_x_sentiment(
         "raw_response": "",
     }
 
-    raw_text = _call_grok_api(_build_sentiment_prompt(symbol, company_name), timeout)
+    raw_text = _call_claude_api(_build_sentiment_prompt(symbol, company_name), timeout)
     if not raw_text:
         return empty_result
 
@@ -503,9 +511,9 @@ def search_x_sentiment(
 def search_stock_deep(
     symbol: str,
     company_name: str = "",
-    timeout: int = 30,
+    timeout: int = 60,
 ) -> dict:
-    """Deep research on a stock via X and web search.
+    """Deep research on a stock via web search.
 
     Parameters
     ----------
@@ -521,7 +529,7 @@ def search_stock_deep(
     dict
         See EMPTY_STOCK_DEEP for the schema.
     """
-    raw_text = _call_grok_api(_build_stock_deep_prompt(symbol, company_name), timeout)
+    raw_text = _call_claude_api(_build_stock_deep_prompt(symbol, company_name), timeout)
     if not raw_text:
         return dict(EMPTY_STOCK_DEEP)
 
@@ -562,9 +570,9 @@ def search_stock_deep(
 
 def search_industry(
     industry_or_theme: str,
-    timeout: int = 30,
+    timeout: int = 60,
 ) -> dict:
-    """Research an industry or theme via X and web search.
+    """Research an industry or theme via web search.
 
     Parameters
     ----------
@@ -578,7 +586,7 @@ def search_industry(
     dict
         See EMPTY_INDUSTRY for the schema.
     """
-    raw_text = _call_grok_api(_build_industry_prompt(industry_or_theme), timeout)
+    raw_text = _call_claude_api(_build_industry_prompt(industry_or_theme), timeout)
     if not raw_text:
         return dict(EMPTY_INDUSTRY)
 
@@ -607,9 +615,9 @@ def search_industry(
 
 def search_market(
     market_or_index: str,
-    timeout: int = 30,
+    timeout: int = 60,
 ) -> dict:
-    """Research a market or index via X and web search.
+    """Research a market or index via web search.
 
     Parameters
     ----------
@@ -623,7 +631,7 @@ def search_market(
     dict
         See EMPTY_MARKET for the schema.
     """
-    raw_text = _call_grok_api(_build_market_prompt(market_or_index), timeout)
+    raw_text = _call_claude_api(_build_market_prompt(market_or_index), timeout)
     if not raw_text:
         return dict(EMPTY_MARKET)
 
@@ -658,9 +666,9 @@ def search_market(
 def search_trending_stocks(
     region: str = "japan",
     theme: Optional[str] = None,
-    timeout: int = 30,
+    timeout: int = 60,
 ) -> dict:
-    """Search X for currently trending stocks in a specific market region.
+    """Search the web for currently trending stocks in a specific market region.
 
     Parameters
     ----------
@@ -677,7 +685,7 @@ def search_trending_stocks(
         Keys: stocks (list of {ticker, name, reason}),
               market_context (str), raw_response (str).
     """
-    raw_text = _call_grok_api(_build_trending_prompt(region, theme), timeout)
+    raw_text = _call_claude_api(_build_trending_prompt(region, theme), timeout)
     if not raw_text:
         return dict(EMPTY_TRENDING)
 
@@ -711,7 +719,7 @@ def search_business(
     company_name: str = "",
     timeout: int = 60,
 ) -> dict:
-    """Research a company's business model via X and web search.
+    """Research a company's business model via web search.
 
     Parameters
     ----------
@@ -727,7 +735,7 @@ def search_business(
     dict
         See EMPTY_BUSINESS for the schema.
     """
-    raw_text = _call_grok_api(_build_business_prompt(symbol, company_name), timeout)
+    raw_text = _call_claude_api(_build_business_prompt(symbol, company_name), timeout)
     if not raw_text:
         return dict(EMPTY_BUSINESS)
 

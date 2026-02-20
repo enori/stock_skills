@@ -140,15 +140,15 @@ def _print_recurring_picks(results):
 
 
 def run_trending_mode(args):
-    """Run trending stock screening using Grok X search."""
+    """Run trending stock screening using Claude API web search."""
     try:
-        from src.data import grok_client as gc
-        if not gc.is_available():
-            print("Error: trending preset requires XAI_API_KEY environment variable.")
-            print("Set: export XAI_API_KEY=your-api-key")
+        from src.data import claude_client as cc
+        if not cc.is_available():
+            print("Error: trending preset requires ANTHROPIC_API_KEY environment variable.")
+            print("Set: export ANTHROPIC_API_KEY=your-api-key")
             sys.exit(1)
     except ImportError:
-        print("Error: grok_client module not available.")
+        print("Error: claude_client module not available.")
         sys.exit(1)
 
     region_key = args.region.lower()
@@ -156,10 +156,10 @@ def run_trending_mode(args):
     region_name = REGION_NAMES.get(first_region, region_key.upper())
     theme_label = f" [{args.theme}]" if args.theme else ""
 
-    print(f"\n## {region_name} - Xトレンド銘柄{theme_label} スクリーニング結果\n")
-    print("Step 1: X (Twitter) でトレンド銘柄を検索中...")
+    print(f"\n## {region_name} - Webトレンド銘柄{theme_label} スクリーニング結果\n")
+    print("Step 1: Web でトレンド銘柄を検索中...")
 
-    screener = TrendingScreener(yahoo_client, gc)
+    screener = TrendingScreener(yahoo_client, cc)
     results, market_context = screener.screen(
         region=region_key, theme=args.theme, top_n=args.top,
     )
@@ -188,7 +188,7 @@ def run_query_mode(args):
         # Treat as raw 2-letter region code
         regions = [region_key]
 
-    # trending preset uses TrendingScreener (Grok-based)
+    # trending preset uses TrendingScreener (Claude API web search)
     if args.preset == "trending":
         run_trending_mode(args)
         return

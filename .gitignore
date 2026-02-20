@@ -7,6 +7,20 @@ __pycache__/
 *.pyc
 .venv/
 .env
+.env.*
+!.env.example
 .claude/skills/stock-portfolio/data/portfolio.csv
 .claude/worktrees/
 data/models/
+
+# Credentials / secrets
+getSessionToken.sh
+*.pem
+*.key
+*.p12
+*.pfx
+credentials.json
+**/secrets/
+
+# Local settings (may contain env vars with credentials)
+.claude/settings.local.json

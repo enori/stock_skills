@@ -40,7 +40,7 @@ paths:
 - 株式: yfinance の `targetHighPrice`/`targetMeanPrice`/`targetLowPrice` から期待リターン算出
 - ETF: 過去2年の月次リターンから CAGR を算出し ±1σ でシナリオ分岐（キャップ±30%）
 - ニュース: yfinance `ticker.news` で公式メディアニュースを取得
-- Xセンチメント: Grok API (`grok-4-1-fast-non-reasoning` + X Search)。`XAI_API_KEY` 未設定時スキップ
+- 投資家センチメント: Claude API (Web Search)。`ANTHROPIC_API_KEY` 未設定時スキップ
 
 ## リバランス (KIK-363)
 

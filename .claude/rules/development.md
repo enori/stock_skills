@@ -4,7 +4,7 @@
 
 - Python 3.10+
 - 主要依存: yfinance, pyyaml, numpy, pandas, pytest
-- Grok API 利用時は `XAI_API_KEY` 環境変数を設定（未設定でも動作する）
+- Claude API (Web検索) 利用時は `ANTHROPIC_API_KEY` 環境変数を設定（未設定でも動作する）
 - Neo4j 書き込み深度は `NEO4J_MODE` 環境変数で制御: `off`/`summary`/`full`（デフォルト: 接続可能なら `full`）(KIK-413)
 - TEI ベクトル検索は `TEI_URL` 環境変数で制御（デフォルト: `http://localhost:8081`）。未起動時はベクトル検索スキップ (KIK-420)
 - コンテキスト鮮度閾値は `CONTEXT_FRESH_HOURS`（デフォルト: 24）/ `CONTEXT_RECENT_HOURS`（デフォルト: 168）で制御 (KIK-427)

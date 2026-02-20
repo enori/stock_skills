@@ -1,7 +1,8 @@
-"""Tests for grok_client.py research functions (KIK-367).
+"""Tests for claude_client.py research functions.
 
-Tests for _call_grok_api, _parse_json_response, _is_japanese_stock,
-_contains_japanese, search_stock_deep, search_industry, search_market.
+Tests for _call_claude_api, _parse_json_response, _is_japanese_stock,
+_contains_japanese, search_stock_deep, search_industry, search_market,
+search_business.
 """
 
 import json
@@ -13,8 +14,8 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
-from src.data.grok_client import (
-    _call_grok_api,
+from src.data.claude_client import (
+    _call_claude_api,
     _parse_json_response,
     _is_japanese_stock,
     _contains_japanese,
@@ -33,82 +34,109 @@ from src.data.grok_client import (
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _make_grok_response(text: str) -> MagicMock:
-    """Build a mock HTTP response that returns *text* as API output."""
-    mock_response = MagicMock()
-    mock_response.status_code = 200
-    mock_response.json.return_value = {
-        "output": [
-            {
-                "type": "message",
-                "content": [
-                    {"type": "output_text", "text": text}
-                ],
-            }
-        ]
-    }
-    return mock_response
+def _make_claude_response(text: str, stop_reason: str = "end_turn") -> MagicMock:
+    """Build a mock Anthropic API response that returns *text*."""
+    text_block = MagicMock()
+    text_block.type = "text"
+    text_block.text = text
+    response = MagicMock()
+    response.content = [text_block]
+    response.stop_reason = stop_reason
+    return response
 
 
 @pytest.fixture(autouse=True)
 def _reset_error_warned():
     """Reset the module-level _error_warned flag before each test."""
-    from src.data import grok_client
-    grok_client._error_warned[0] = False
+    from src.data import claude_client
+    claude_client._error_warned[0] = False
     yield
 
 
 # ===================================================================
-# _call_grok_api
+# _call_claude_api
 # ===================================================================
 
-class TestCallGrokApi:
+class TestCallClaudeApi:
 
     def test_no_api_key(self, monkeypatch):
-        """Returns empty string when XAI_API_KEY is not set."""
-        monkeypatch.delenv("XAI_API_KEY", raising=False)
-        result = _call_grok_api("test prompt")
+        """Returns empty string when ANTHROPIC_API_KEY is not set."""
+        monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+        result = _call_claude_api("test prompt")
         assert result == ""
 
-    @patch("src.data.grok_client.requests.post")
-    def test_successful_response(self, mock_post, monkeypatch):
+    @patch("src.data.claude_client.anthropic")
+    def test_successful_response(self, mock_anthropic, monkeypatch):
         """Returns text content from a successful API response."""
-        monkeypatch.setenv("XAI_API_KEY", "xai-test-key")
-        mock_post.return_value = _make_grok_response("Hello from Grok")
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-test-key")
+        import src.data.claude_client as mod
+        monkeypatch.setattr(mod, "_HAS_ANTHROPIC", True)
 
-        result = _call_grok_api("test prompt")
-        assert result == "Hello from Grok"
+        mock_client = MagicMock()
+        mock_client.messages.create.return_value = _make_claude_response("Hello from Claude")
+        mock_anthropic.Anthropic.return_value = mock_client
 
-    @patch("src.data.grok_client.requests.post")
-    def test_api_error(self, mock_post, monkeypatch):
-        """Returns empty string on HTTP 500."""
-        monkeypatch.setenv("XAI_API_KEY", "xai-test-key")
-        mock_response = MagicMock()
-        mock_response.status_code = 500
-        mock_post.return_value = mock_response
+        result = _call_claude_api("test prompt")
+        assert result == "Hello from Claude"
 
-        result = _call_grok_api("test prompt")
+    @patch("src.data.claude_client.anthropic")
+    def test_api_error(self, mock_anthropic, monkeypatch):
+        """Returns empty string on API error."""
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-test-key")
+        import src.data.claude_client as mod
+        monkeypatch.setattr(mod, "_HAS_ANTHROPIC", True)
+
+        mock_client = MagicMock()
+        mock_client.messages.create.side_effect = Exception("API error")
+        mock_anthropic.Anthropic.return_value = mock_client
+
+        result = _call_claude_api("test prompt")
         assert result == ""
 
-    @patch("src.data.grok_client.requests.post")
-    def test_timeout(self, mock_post, monkeypatch):
-        """Returns empty string on timeout."""
-        import requests as req
-        monkeypatch.setenv("XAI_API_KEY", "xai-test-key")
-        mock_post.side_effect = req.exceptions.Timeout("Timed out")
+    @patch("src.data.claude_client.anthropic")
+    def test_pause_turn_continues(self, mock_anthropic, monkeypatch):
+        """Continues conversation on pause_turn."""
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-test-key")
+        import src.data.claude_client as mod
+        monkeypatch.setattr(mod, "_HAS_ANTHROPIC", True)
 
-        result = _call_grok_api("test prompt", timeout=1)
-        assert result == ""
+        pause_resp = _make_claude_response("Searching...", stop_reason="pause_turn")
+        final_resp = _make_claude_response("Final result")
 
-    @patch("src.data.grok_client.requests.post")
-    def test_request_exception(self, mock_post, monkeypatch):
-        """Returns empty string on general request exception."""
-        import requests as req
-        monkeypatch.setenv("XAI_API_KEY", "xai-test-key")
-        mock_post.side_effect = req.exceptions.ConnectionError("Connection refused")
+        mock_client = MagicMock()
+        mock_client.messages.create.side_effect = [pause_resp, final_resp]
+        mock_anthropic.Anthropic.return_value = mock_client
 
-        result = _call_grok_api("test prompt")
-        assert result == ""
+        result = _call_claude_api("test prompt")
+        assert result == "Final result"
+        assert mock_client.messages.create.call_count == 2
+
+    @patch("src.data.claude_client.anthropic")
+    def test_multiple_text_blocks(self, mock_anthropic, monkeypatch):
+        """Concatenates multiple text blocks in response."""
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-test-key")
+        import src.data.claude_client as mod
+        monkeypatch.setattr(mod, "_HAS_ANTHROPIC", True)
+
+        text1 = MagicMock()
+        text1.type = "text"
+        text1.text = "Part 1 "
+        text2 = MagicMock()
+        text2.type = "text"
+        text2.text = "Part 2"
+        tool_use = MagicMock()
+        tool_use.type = "server_tool_use"
+
+        response = MagicMock()
+        response.content = [text1, tool_use, text2]
+        response.stop_reason = "end_turn"
+
+        mock_client = MagicMock()
+        mock_client.messages.create.return_value = response
+        mock_anthropic.Anthropic.return_value = mock_client
+
+        result = _call_claude_api("test prompt")
+        assert result == "Part 1 Part 2"
 
 
 # ===================================================================
@@ -138,6 +166,18 @@ class TestParseJsonResponse:
         """Returns empty dict for empty string."""
         result = _parse_json_response("")
         assert result == {}
+
+    def test_markdown_code_block(self):
+        """Extracts JSON from markdown code block."""
+        text = '```json\n{"key": "value"}\n```'
+        result = _parse_json_response(text)
+        assert result == {"key": "value"}
+
+    def test_markdown_code_block_no_lang(self):
+        """Extracts JSON from code block without language tag."""
+        text = '```\n{"key": "value"}\n```'
+        result = _parse_json_response(text)
+        assert result == {"key": "value"}
 
 
 # ===================================================================
@@ -190,17 +230,19 @@ class TestSearchStockDeep:
 
     def test_no_api_key(self, monkeypatch):
         """Returns EMPTY_STOCK_DEEP when API key is not set."""
-        monkeypatch.delenv("XAI_API_KEY", raising=False)
+        monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
         result = search_stock_deep("AAPL")
         assert result["recent_news"] == []
         assert result["catalysts"] == {"positive": [], "negative": []}
         assert result["x_sentiment"]["score"] == 0.0
         assert result["raw_response"] == ""
 
-    @patch("src.data.grok_client.requests.post")
-    def test_successful_response(self, mock_post, monkeypatch):
+    @patch("src.data.claude_client.anthropic")
+    def test_successful_response(self, mock_anthropic, monkeypatch):
         """Parses a successful deep research response."""
-        monkeypatch.setenv("XAI_API_KEY", "xai-test-key")
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-test-key")
+        import src.data.claude_client as mod
+        monkeypatch.setattr(mod, "_HAS_ANTHROPIC", True)
 
         json_content = json.dumps({
             "recent_news": ["Earnings beat expectations", "New product launch"],
@@ -217,7 +259,9 @@ class TestSearchStockDeep:
             "competitive_notes": ["Market leader in segment"],
         })
 
-        mock_post.return_value = _make_grok_response(json_content)
+        mock_client = MagicMock()
+        mock_client.messages.create.return_value = _make_claude_response(json_content)
+        mock_anthropic.Anthropic.return_value = mock_client
 
         result = search_stock_deep("AAPL", "Apple Inc.")
         assert len(result["recent_news"]) == 2
@@ -228,37 +272,52 @@ class TestSearchStockDeep:
         assert result["x_sentiment"]["summary"] == "Bullish sentiment"
         assert result["competitive_notes"] == ["Market leader in segment"]
 
-    @patch("src.data.grok_client.requests.post")
-    def test_japanese_stock_prompt(self, mock_post, monkeypatch):
+    @patch("src.data.claude_client.anthropic")
+    def test_japanese_stock_prompt(self, mock_anthropic, monkeypatch):
         """Japanese stock uses Japanese prompt."""
-        monkeypatch.setenv("XAI_API_KEY", "xai-test-key")
-        mock_post.return_value = _make_grok_response("{}")
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-test-key")
+        import src.data.claude_client as mod
+        monkeypatch.setattr(mod, "_HAS_ANTHROPIC", True)
+
+        mock_client = MagicMock()
+        mock_client.messages.create.return_value = _make_claude_response("{}")
+        mock_anthropic.Anthropic.return_value = mock_client
 
         search_stock_deep("7203.T", "Toyota")
 
-        call_args = mock_post.call_args
-        payload = call_args[1]["json"] if "json" in call_args[1] else call_args[0][1]
-        prompt = payload["input"]
+        call_args = mock_client.messages.create.call_args
+        prompt = call_args[1]["messages"][0]["content"]
         assert "調査" in prompt or "7203.T" in prompt
 
-    @patch("src.data.grok_client.requests.post")
-    def test_us_stock_prompt(self, mock_post, monkeypatch):
+    @patch("src.data.claude_client.anthropic")
+    def test_us_stock_prompt(self, mock_anthropic, monkeypatch):
         """US stock uses English prompt."""
-        monkeypatch.setenv("XAI_API_KEY", "xai-test-key")
-        mock_post.return_value = _make_grok_response("{}")
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-test-key")
+        import src.data.claude_client as mod
+        monkeypatch.setattr(mod, "_HAS_ANTHROPIC", True)
+
+        mock_client = MagicMock()
+        mock_client.messages.create.return_value = _make_claude_response("{}")
+        mock_anthropic.Anthropic.return_value = mock_client
 
         search_stock_deep("AAPL", "Apple Inc.")
 
-        call_args = mock_post.call_args
-        payload = call_args[1]["json"] if "json" in call_args[1] else call_args[0][1]
-        prompt = payload["input"]
+        call_args = mock_client.messages.create.call_args
+        prompt = call_args[1]["messages"][0]["content"]
         assert "Research" in prompt
 
-    @patch("src.data.grok_client.requests.post")
-    def test_malformed_response(self, mock_post, monkeypatch):
+    @patch("src.data.claude_client.anthropic")
+    def test_malformed_response(self, mock_anthropic, monkeypatch):
         """Malformed JSON sets raw_response but leaves data empty."""
-        monkeypatch.setenv("XAI_API_KEY", "xai-test-key")
-        mock_post.return_value = _make_grok_response("This is not JSON at all")
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-test-key")
+        import src.data.claude_client as mod
+        monkeypatch.setattr(mod, "_HAS_ANTHROPIC", True)
+
+        mock_client = MagicMock()
+        mock_client.messages.create.return_value = _make_claude_response(
+            "This is not JSON at all"
+        )
+        mock_anthropic.Anthropic.return_value = mock_client
 
         result = search_stock_deep("AAPL")
         assert result["raw_response"] == "This is not JSON at all"
@@ -274,16 +333,18 @@ class TestSearchIndustry:
 
     def test_no_api_key(self, monkeypatch):
         """Returns EMPTY_INDUSTRY when API key is not set."""
-        monkeypatch.delenv("XAI_API_KEY", raising=False)
+        monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
         result = search_industry("半導体")
         assert result["trends"] == []
         assert result["key_players"] == []
         assert result["raw_response"] == ""
 
-    @patch("src.data.grok_client.requests.post")
-    def test_successful_response(self, mock_post, monkeypatch):
+    @patch("src.data.claude_client.anthropic")
+    def test_successful_response(self, mock_anthropic, monkeypatch):
         """Parses a successful industry research response."""
-        monkeypatch.setenv("XAI_API_KEY", "xai-test-key")
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-test-key")
+        import src.data.claude_client as mod
+        monkeypatch.setattr(mod, "_HAS_ANTHROPIC", True)
 
         json_content = json.dumps({
             "trends": ["AI chip demand surging"],
@@ -296,7 +357,9 @@ class TestSearchIndustry:
             "investor_focus": ["CAPEX cycle"],
         })
 
-        mock_post.return_value = _make_grok_response(json_content)
+        mock_client = MagicMock()
+        mock_client.messages.create.return_value = _make_claude_response(json_content)
+        mock_anthropic.Anthropic.return_value = mock_client
 
         result = search_industry("semiconductor")
         assert result["trends"] == ["AI chip demand surging"]
@@ -307,31 +370,39 @@ class TestSearchIndustry:
         assert result["regulatory"] == ["US export controls"]
         assert result["investor_focus"] == ["CAPEX cycle"]
 
-    @patch("src.data.grok_client.requests.post")
-    def test_japanese_theme(self, mock_post, monkeypatch):
+    @patch("src.data.claude_client.anthropic")
+    def test_japanese_theme(self, mock_anthropic, monkeypatch):
         """Japanese theme uses Japanese prompt."""
-        monkeypatch.setenv("XAI_API_KEY", "xai-test-key")
-        mock_post.return_value = _make_grok_response("{}")
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-test-key")
+        import src.data.claude_client as mod
+        monkeypatch.setattr(mod, "_HAS_ANTHROPIC", True)
+
+        mock_client = MagicMock()
+        mock_client.messages.create.return_value = _make_claude_response("{}")
+        mock_anthropic.Anthropic.return_value = mock_client
 
         search_industry("半導体")
 
-        call_args = mock_post.call_args
-        payload = call_args[1]["json"] if "json" in call_args[1] else call_args[0][1]
-        prompt = payload["input"]
+        call_args = mock_client.messages.create.call_args
+        prompt = call_args[1]["messages"][0]["content"]
         assert "半導体" in prompt
         assert "業界" in prompt or "テーマ" in prompt
 
-    @patch("src.data.grok_client.requests.post")
-    def test_english_theme(self, mock_post, monkeypatch):
+    @patch("src.data.claude_client.anthropic")
+    def test_english_theme(self, mock_anthropic, monkeypatch):
         """English theme uses English prompt."""
-        monkeypatch.setenv("XAI_API_KEY", "xai-test-key")
-        mock_post.return_value = _make_grok_response("{}")
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-test-key")
+        import src.data.claude_client as mod
+        monkeypatch.setattr(mod, "_HAS_ANTHROPIC", True)
+
+        mock_client = MagicMock()
+        mock_client.messages.create.return_value = _make_claude_response("{}")
+        mock_anthropic.Anthropic.return_value = mock_client
 
         search_industry("semiconductor")
 
-        call_args = mock_post.call_args
-        payload = call_args[1]["json"] if "json" in call_args[1] else call_args[0][1]
-        prompt = payload["input"]
+        call_args = mock_client.messages.create.call_args
+        prompt = call_args[1]["messages"][0]["content"]
         assert "Research" in prompt
 
 
@@ -343,17 +414,19 @@ class TestSearchMarket:
 
     def test_no_api_key(self, monkeypatch):
         """Returns EMPTY_MARKET when API key is not set."""
-        monkeypatch.delenv("XAI_API_KEY", raising=False)
+        monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
         result = search_market("日経平均")
         assert result["price_action"] == ""
         assert result["macro_factors"] == []
         assert result["sentiment"]["score"] == 0.0
         assert result["raw_response"] == ""
 
-    @patch("src.data.grok_client.requests.post")
-    def test_successful_response(self, mock_post, monkeypatch):
+    @patch("src.data.claude_client.anthropic")
+    def test_successful_response(self, mock_anthropic, monkeypatch):
         """Parses a successful market research response."""
-        monkeypatch.setenv("XAI_API_KEY", "xai-test-key")
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-test-key")
+        import src.data.claude_client as mod
+        monkeypatch.setattr(mod, "_HAS_ANTHROPIC", True)
 
         json_content = json.dumps({
             "price_action": "Nikkei rose 1.5% on strong earnings",
@@ -363,7 +436,9 @@ class TestSearchMarket:
             "sector_rotation": ["From defensive to cyclical"],
         })
 
-        mock_post.return_value = _make_grok_response(json_content)
+        mock_client = MagicMock()
+        mock_client.messages.create.return_value = _make_claude_response(json_content)
+        mock_anthropic.Anthropic.return_value = mock_client
 
         result = search_market("日経平均")
         assert result["price_action"] == "Nikkei rose 1.5% on strong earnings"
@@ -382,7 +457,7 @@ class TestSearchBusiness:
 
     def test_no_api_key(self, monkeypatch):
         """Returns EMPTY_BUSINESS when API key is not set."""
-        monkeypatch.delenv("XAI_API_KEY", raising=False)
+        monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
         result = search_business("7751.T")
         assert result["overview"] == ""
         assert result["segments"] == []
@@ -390,10 +465,12 @@ class TestSearchBusiness:
         assert result["competitive_advantages"] == []
         assert result["raw_response"] == ""
 
-    @patch("src.data.grok_client.requests.post")
-    def test_successful_response(self, mock_post, monkeypatch):
+    @patch("src.data.claude_client.anthropic")
+    def test_successful_response(self, mock_anthropic, monkeypatch):
         """Parses a successful business model response."""
-        monkeypatch.setenv("XAI_API_KEY", "xai-test-key")
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-test-key")
+        import src.data.claude_client as mod
+        monkeypatch.setattr(mod, "_HAS_ANTHROPIC", True)
 
         json_content = json.dumps({
             "overview": "Canon is a diversified imaging and optical company",
@@ -408,7 +485,9 @@ class TestSearchBusiness:
             "risks": ["Declining print market", "Competition from smartphones"],
         })
 
-        mock_post.return_value = _make_grok_response(json_content)
+        mock_client = MagicMock()
+        mock_client.messages.create.return_value = _make_claude_response(json_content)
+        mock_anthropic.Anthropic.return_value = mock_client
 
         result = search_business("7751.T", "Canon Inc.")
         assert result["overview"] == "Canon is a diversified imaging and optical company"
@@ -421,47 +500,64 @@ class TestSearchBusiness:
         assert len(result["growth_strategy"]) == 2
         assert len(result["risks"]) == 2
 
-    @patch("src.data.grok_client.requests.post")
-    def test_japanese_stock_prompt(self, mock_post, monkeypatch):
+    @patch("src.data.claude_client.anthropic")
+    def test_japanese_stock_prompt(self, mock_anthropic, monkeypatch):
         """Japanese stock uses Japanese prompt."""
-        monkeypatch.setenv("XAI_API_KEY", "xai-test-key")
-        mock_post.return_value = _make_grok_response("{}")
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-test-key")
+        import src.data.claude_client as mod
+        monkeypatch.setattr(mod, "_HAS_ANTHROPIC", True)
+
+        mock_client = MagicMock()
+        mock_client.messages.create.return_value = _make_claude_response("{}")
+        mock_anthropic.Anthropic.return_value = mock_client
 
         search_business("7751.T", "キヤノン")
 
-        call_args = mock_post.call_args
-        payload = call_args[1]["json"] if "json" in call_args[1] else call_args[0][1]
-        prompt = payload["input"]
+        call_args = mock_client.messages.create.call_args
+        prompt = call_args[1]["messages"][0]["content"]
         assert "ビジネスモデル" in prompt or "事業概要" in prompt
 
-    @patch("src.data.grok_client.requests.post")
-    def test_us_stock_prompt(self, mock_post, monkeypatch):
+    @patch("src.data.claude_client.anthropic")
+    def test_us_stock_prompt(self, mock_anthropic, monkeypatch):
         """US stock uses English prompt."""
-        monkeypatch.setenv("XAI_API_KEY", "xai-test-key")
-        mock_post.return_value = _make_grok_response("{}")
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-test-key")
+        import src.data.claude_client as mod
+        monkeypatch.setattr(mod, "_HAS_ANTHROPIC", True)
+
+        mock_client = MagicMock()
+        mock_client.messages.create.return_value = _make_claude_response("{}")
+        mock_anthropic.Anthropic.return_value = mock_client
 
         search_business("AAPL", "Apple Inc.")
 
-        call_args = mock_post.call_args
-        payload = call_args[1]["json"] if "json" in call_args[1] else call_args[0][1]
-        prompt = payload["input"]
+        call_args = mock_client.messages.create.call_args
+        prompt = call_args[1]["messages"][0]["content"]
         assert "business model" in prompt.lower() or "Analyze" in prompt
 
-    @patch("src.data.grok_client.requests.post")
-    def test_malformed_response(self, mock_post, monkeypatch):
+    @patch("src.data.claude_client.anthropic")
+    def test_malformed_response(self, mock_anthropic, monkeypatch):
         """Malformed JSON sets raw_response but leaves data empty."""
-        monkeypatch.setenv("XAI_API_KEY", "xai-test-key")
-        mock_post.return_value = _make_grok_response("This is not JSON at all")
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-test-key")
+        import src.data.claude_client as mod
+        monkeypatch.setattr(mod, "_HAS_ANTHROPIC", True)
+
+        mock_client = MagicMock()
+        mock_client.messages.create.return_value = _make_claude_response(
+            "This is not JSON at all"
+        )
+        mock_anthropic.Anthropic.return_value = mock_client
 
         result = search_business("7751.T")
         assert result["raw_response"] == "This is not JSON at all"
         assert result["overview"] == ""
         assert result["segments"] == []
 
-    @patch("src.data.grok_client.requests.post")
-    def test_segment_validation(self, mock_post, monkeypatch):
+    @patch("src.data.claude_client.anthropic")
+    def test_segment_validation(self, mock_anthropic, monkeypatch):
         """Segments with missing fields get defaults."""
-        monkeypatch.setenv("XAI_API_KEY", "xai-test-key")
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-test-key")
+        import src.data.claude_client as mod
+        monkeypatch.setattr(mod, "_HAS_ANTHROPIC", True)
 
         json_content = json.dumps({
             "segments": [
@@ -469,7 +565,10 @@ class TestSearchBusiness:
                 {"name": "Division B", "revenue_share": "30%", "description": "B desc"},
             ],
         })
-        mock_post.return_value = _make_grok_response(json_content)
+
+        mock_client = MagicMock()
+        mock_client.messages.create.return_value = _make_claude_response(json_content)
+        mock_anthropic.Anthropic.return_value = mock_client
 
         result = search_business("TEST")
         assert len(result["segments"]) == 2

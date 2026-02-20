@@ -1,8 +1,77 @@
 #!/bin/bash
-# Pre-commit hook: warn if src/ changes without doc updates (KIK-407)
+# Pre-commit hook: credential detection + doc update check (KIK-407)
 #
 # Install: cp scripts/hooks/pre-commit .git/hooks/pre-commit && chmod +x .git/hooks/pre-commit
 # Bypass:  git commit --no-verify
+
+# ---------------------------------------------------------------------------
+# 1. Credential / secret detection
+# ---------------------------------------------------------------------------
+
+# Patterns that indicate real secrets (not placeholders like xxx or example values)
+SECRET_PATTERNS=(
+  'ANTHROPIC_API_KEY=sk-ant-[a-zA-Z0-9]'
+  'AWS_ACCESS_KEY_ID=AKIA[A-Z0-9]'
+  'AWS_SECRET_ACCESS_KEY=[a-zA-Z0-9/+=]{30}'
+  'AWS_SESSION_TOKEN=[a-zA-Z0-9/+=]{30}'
+  'OPENAI_API_KEY=sk-[a-zA-Z0-9]'
+  'XAI_API_KEY=xai-[a-zA-Z0-9]'
+  'PERPLEXITY_API_KEY=pplx-[a-zA-Z0-9]'
+  'NEO4J_PASSWORD=[^$}{].{8,}'
+  'PRIVATE.KEY'
+  'BEGIN RSA PRIVATE KEY'
+  'BEGIN OPENSSH PRIVATE KEY'
+  'BEGIN EC PRIVATE KEY'
+)
+
+# Files to always skip (example files, test fixtures with fake keys)
+SKIP_PATTERN='(\.env\.example|tests/|\.md$)'
+
+STAGED_FILES=$(git diff --cached --name-only --diff-filter=ACM)
+
+FOUND_SECRETS=0
+for file in $STAGED_FILES; do
+  # Skip excluded files
+  if echo "$file" | grep -qE "$SKIP_PATTERN"; then
+    continue
+  fi
+
+  # Get staged content
+  CONTENT=$(git show ":$file" 2>/dev/null) || continue
+
+  for pattern in "${SECRET_PATTERNS[@]}"; do
+    if echo "$CONTENT" | grep -qE "$pattern"; then
+      echo "ERROR: Possible secret detected in $file"
+      echo "  Pattern: $pattern"
+      FOUND_SECRETS=1
+    fi
+  done
+done
+
+if [ "$FOUND_SECRETS" -gt 0 ]; then
+  echo ""
+  echo "Secrets detected in staged files. Commit blocked."
+  echo "If these are false positives, use: git commit --no-verify"
+  exit 1
+fi
+
+# ---------------------------------------------------------------------------
+# 2. Forbidden file extension check
+# ---------------------------------------------------------------------------
+
+FORBIDDEN_EXTENSIONS='(\.pem|\.key|\.p12|\.pfx|\.keystore)$'
+for file in $STAGED_FILES; do
+  if echo "$file" | grep -qiE "$FORBIDDEN_EXTENSIONS"; then
+    echo "ERROR: Potentially sensitive file staged: $file"
+    echo "Private keys and certificates should not be committed."
+    echo "If intentional, use: git commit --no-verify"
+    exit 1
+  fi
+done
+
+# ---------------------------------------------------------------------------
+# 3. Doc update check (KIK-407)
+# ---------------------------------------------------------------------------
 
 SRC_CHANGED=$(git diff --cached --name-only | grep -cE '^src/(core|data)/')
 DOC_CHANGED=$(git diff --cached --name-only | grep -cE '(CLAUDE\.md|README\.md|SKILL\.md|rules/|config/)')

@@ -4,7 +4,7 @@
 
 自然言語ファーストの投資分析システム。ユーザーは日本語で意図を伝えるだけで、スクリーニング・個別銘柄分析・ポートフォリオ管理・リスク評価・知識グラフ照会が自動実行される。
 
-Claude Code Skills として動作し、Yahoo Finance API (yfinance) + Grok API (X/Web検索) + Neo4j (知識グラフ) + TEI (ベクトル検索, KIK-420) を統合。
+Claude Code Skills として動作し、Yahoo Finance API (yfinance) + Claude API (Web検索) + Neo4j (知識グラフ) + TEI (ベクトル検索, KIK-420) を統合。
 
 ---
 
@@ -39,7 +39,7 @@ graph TD
 
     subgraph Data["Data Layer (src/data/)"]
         YC["yahoo_client<br/>(24h JSON cache)"]
-        GC["grok_client<br/>(XAI_API_KEY)"]
+        GC["claude_client<br/>(ANTHROPIC_API_KEY)"]
         HS["history_store<br/>(JSON蓄積)"]
         GS["graph_store<br/>(Neo4j CRUD)"]
         GQM["graph_query<br/>(Cypher照会)"]
@@ -95,7 +95,7 @@ graph TD
    ↓
 6. Data Layer (src/data/)
    ├─ yahoo_client: yfinance + 24h JSON cache
-   ├─ grok_client: Grok API (X/Web検索)
+   ├─ claude_client: Claude API (Web検索)
    ├─ graph_store: Neo4j CRUD (MERGE ベース)
    └─ history_store: 実行結果の JSON 蓄積
    ↓
@@ -159,7 +159,7 @@ except ImportError:
 | risk/ | scenario_analysis.py | シナリオ分析 (実行ロジック) |
 | risk/ | scenario_definitions.py | 8シナリオ + ETF資産クラス定義 |
 | risk/ | recommender.py | ルールベース推奨アクション |
-| research/ | researcher.py | yfinance + Grok API 統合リサーチ |
+| research/ | researcher.py | yfinance + Claude API 統合リサーチ |
 | (root) | health_check.py | 3段階アラート + クロス検出 + 還元安定度 |
 | (root) | return_estimate.py | アナリスト + 過去リターン + ニュース + Xセンチメント |
 | (root) | value_trap.py | バリュートラップ検出 |
@@ -172,7 +172,7 @@ except ImportError:
 | モジュール | 役割 |
 |:---|:---|
 | yahoo_client.py | yfinance ラッパー + 24h JSON cache + 異常値ガード |
-| grok_client.py | Grok API (X検索/Web検索) + XAI_API_KEY 環境変数 |
+| claude_client.py | Claude API (Web検索) + ANTHROPIC_API_KEY 環境変数 |
 | history_store.py | スキル実行結果の JSON 自動蓄積 (data/history/) |
 | graph_store.py | Neo4j CRUD (11ノードタイプ, MERGE ベース, ベクトルインデックス(KIK-420)) |
 | graph_query.py | Neo4j 照会ヘルパー (6関数 + vector_search(KIK-420)) |

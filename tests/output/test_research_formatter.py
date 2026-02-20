@@ -179,7 +179,7 @@ class TestFormatStockResearch:
 
         output = format_stock_research(data)
 
-        assert "XAI_API_KEY" in output
+        assert "ANTHROPIC_API_KEY" in output
         assert "未設定" in output
 
     def test_none_data(self):
@@ -240,7 +240,7 @@ class TestFormatIndustryResearch:
 
         output = format_industry_research(data)
         assert "EV - 業界リサーチ" in output
-        assert "XAI_API_KEY" in output
+        assert "ANTHROPIC_API_KEY" in output
 
     def test_empty_data(self):
         """Empty/None data returns a message."""
@@ -500,7 +500,7 @@ class TestFormatBusinessResearch:
         output = format_business_research(data)
         assert "Apple Inc. (AAPL)" in output
         assert "ビジネスモデル分析" in output
-        assert "XAI_API_KEY" in output
+        assert "ANTHROPIC_API_KEY" in output
 
     def test_empty_data(self):
         """Empty/None data returns a message."""

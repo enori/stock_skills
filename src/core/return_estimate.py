@@ -6,7 +6,7 @@ using two methods:
 - ETFs (no analyst coverage): historical percentile-based returns
 
 Per-stock estimates accept optional x_sentiment for /market-research deep-dives,
-but portfolio-level estimation does not call Grok API (KIK-369).
+but portfolio-level estimation does not call Claude API (KIK-369).
 """
 
 import math
@@ -234,7 +234,7 @@ def estimate_stock_return(
     news : list, optional
         News items from yahoo_client.get_stock_news().
     x_sentiment : dict, optional
-        Sentiment data from grok_client.search_x_sentiment().
+        Sentiment data from claude_client.search_x_sentiment().
 
     Returns
     -------
@@ -398,7 +398,7 @@ def estimate_portfolio_return(csv_path: str, yahoo_client_module) -> dict:
         news = yahoo_client_module.get_stock_news(symbol)
 
         # X sentiment: always None in portfolio context (KIK-369).
-        # Grok API is reserved for /market-research individual deep-dives.
+        # Claude API is reserved for /market-research individual deep-dives.
         x_sentiment = None
 
         # Estimate returns
