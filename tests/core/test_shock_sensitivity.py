@@ -27,7 +27,7 @@ def _make_hist(
 ) -> pd.DataFrame:
     """Create a DataFrame that mimics yahoo_client.get_price_history()."""
     n = len(prices)
-    dates = pd.bdate_range(end="2025-06-01", periods=n)
+    dates = pd.bdate_range(end="2025-05-30", periods=n)
     if volumes is None:
         volumes = [1_000_000] * n
     return pd.DataFrame({"Close": prices, "Volume": volumes}, index=dates)
